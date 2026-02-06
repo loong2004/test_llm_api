@@ -56,27 +56,19 @@ def is_cerebras_api(url: str) -> bool:
 
 
 def normalize_base_url(url: str) -> str:
-    """
-    关键修正：
-    - Cloudflare 的 OpenAI 兼容端点是 .../ai/v1/chat/completions
-      所以用户输入 .../ai 时也要补 /v1
-    - Cerebras 通常已经是 /v1（但不强制，保持你原逻辑）
-    """
     url = url.rstrip("/")
 
     if url.endswith("/chat/completions"):
-        # 用户可能直接输入了完整 endpoint，则保持
         return url
 
     if not url.endswith("/v1"):
         if is_cloudflare_api(url):
-            print("[INFO] 检测到 Cloudflare Workers AI，���动补全 /v1（OpenAI 兼容端点）")
+            print("[INFO] 检测到 Cloudflare Workers AI，自动补全 /v1（OpenAI 兼容端点）")
             url += "/v1"
         elif not is_cerebras_api(url):
             print("[INFO] Base URL 未以 /v1 结尾，已自动补全")
             url += "/v1"
         else:
-            # Cerebras：不补，保持你原版本行为（避免指纹/路径变化）
             pass
 
     return url
@@ -89,19 +81,10 @@ def build_headers(api_key: str, url: str = "") -> dict:
         "Accept": "application/json",
     }
 
-    # 为不同的 API 定制 User-Agent（保持你原逻辑）
-    if is_cerebras_api(url):
-        headers["User-Agent"] = (
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-            "AppleWebKit/537.36 (KHTML, like Gecko) "
-            "Chrome/131.0.0.0 Safari/537.36"
-        )
-    else:
-        headers["User-Agent"] = (
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-            "AppleWebKit/537.36 (KHTML, like Gecko) "
-            "Chrome/120.0.0.0 Safari/537.36"
-        )
+    # 【关键修改】
+    # 移除了手动设置 User-Agent 的代码。
+    # 让 curl_cffi 的 impersonate 参数全权负责生成匹配的 User-Agent 和 TLS 指纹。
+    # 这样可以避免因 Header 与 TLS 指纹不符导致的 Cloudflare 403 拦截。
 
     return headers
 
@@ -133,9 +116,6 @@ def looks_like_cloudflare_challenge(resp) -> bool:
 
 
 def do_request(method: str, url: str, headers: dict, json_data: dict = None):
-    """
-    关键：保持你第一个版本的请求方式，尽量不改“指纹”。
-    """
     try:
         impersonate_version = "chrome131" if is_cerebras_api(url) else "chrome120"
 
