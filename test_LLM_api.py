@@ -3,9 +3,6 @@ import math
 import sys
 from typing import List
 
-# -----------------------------------------------------------------------------
-# [核心升级] 尝试导入 curl_cffi 以通过 Cloudflare/Cerebras 的高强度验证
-# -----------------------------------------------------------------------------
 try:
     from curl_cffi import requests
     HAS_CURL_CFFI = True
@@ -27,7 +24,6 @@ def build_headers(api_key: str) -> dict:
         "Authorization": f"Bearer {api_key}",
         "Content-Type": "application/json",
         "Accept": "application/json, text/plain, */*",
-        # [关键修改] 伪装成真实的 Chrome 浏览器，防止被简单防火墙拦截
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
     }
 
@@ -37,17 +33,14 @@ def safe_json(resp):
     except Exception:
         return None
 
-# [新增] 统一请求封装，自动处理指纹模拟
 def do_request(method: str, url: str, headers: dict, json_data: dict = None):
     try:
         if HAS_CURL_CFFI:
-            # impersonate="chrome110" 是穿透 Cloudflare 5秒盾的关键
             if method.upper() == "GET":
                 return requests.get(url, headers=headers, timeout=TIMEOUT, impersonate="chrome110")
             else:
                 return requests.post(url, headers=headers, json=json_data, timeout=TIMEOUT, impersonate="chrome110")
         else:
-            # 回退到普通 requests
             if method.upper() == "GET":
                 return requests.get(url, headers=headers, timeout=TIMEOUT)
             else:
@@ -62,12 +55,10 @@ def fetch_models(base_url: str, headers: dict) -> List[str]:
 
     if not resp: return []
 
-    # 针对 Cloudflare 的特殊处理
     if resp.status_code == 405:
         print("[WARN] 该接口不支持获取模型列表 (HTTP 405 - Method Not Allowed)")
         return []
-    
-    # 针对 Cerebras 被拦截的处理
+
     if resp.status_code == 403:
         print("[WARN] 请求被防火墙拦截 (HTTP 403)")
         if not HAS_CURL_CFFI:
@@ -91,18 +82,17 @@ def fetch_models(base_url: str, headers: dict) -> List[str]:
     models = []
     for m in raw:
         if isinstance(m, dict):
-            # 兼容不同厂商的字段名 (id 或 name)
             model_id = m.get("id") or m.get("name")
             if model_id:
                 models.append(model_id)
 
-    return sorted(models) # 排序让列表更易读
+    return sorted(models)
 
 def choose_model(models: List[str]) -> str:
     if not models: return ""
     if len(models) == 1: return models[0]
 
-    page_size = 15 # 一页显示15个
+    page_size = 15
     total = len(models)
     page = 0
 
@@ -151,7 +141,6 @@ def chat_test(base_url: str, headers: dict, model: str):
 
     if resp.status_code != 200:
         print(f"[ERROR] 请求失败 (HTTP {resp.status_code})")
-        # 打印详细错误信息，方便调试
         try:
             print(f"错误详情: {resp.text[:300]}")
         except:
@@ -184,7 +173,6 @@ def main():
         print("        (推荐运行 pip install curl_cffi 以获得最佳效果)")
     print("=" * 60)
 
-    # 允许用户直接回车跳过输入（如果只是想快速测试硬编码的地址，可在代码里改）
     base_url_in = input("API Base URL: ").strip()
     if not base_url_in:
         print("错误: URL 不能为空")
