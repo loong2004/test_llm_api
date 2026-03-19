@@ -49,10 +49,17 @@ def test_chat_completion(base_url, api_key, model_name):
     }
     
     print(f"\n正在向模型 [{model_name}] 发送测试消息 (最长等待60秒)...")
+    response = None
     try:
         response = requests.post(url, headers=headers, json=payload, timeout=60)
         response.raise_for_status()
         result = response.json()
+        
+        # 验证返回的JSON结构
+        if "choices" not in result or not result["choices"]:
+            print("\n测试失败: 返回的响应缺少 'choices' 字段。")
+            print(f"完整响应: {result}")
+            return
         
         reply = result["choices"][0]["message"]["content"]
         print("\n测试成功！模型回复如下：")
@@ -62,10 +69,20 @@ def test_chat_completion(base_url, api_key, model_name):
         
     except requests.exceptions.ReadTimeout:
         print(f"\n测试失败: 响应超时 (Read timed out)。")
+    except requests.exceptions.ConnectionError as e:
+        print(f"\n测试失败: 连接错误 - {e}")
+    except requests.exceptions.HTTPError as e:
+        print(f"\n测试失败: HTTP 错误 - {e}")
+    except ValueError as e:
+        print(f"\n测试失败: JSON 解析错误 - {e}")
+        if response is not None:
+            print(f"返回的内容: {response.text[:500]}")
+    except KeyError as e:
+        print(f"\n测试失败: 返回的JSON结构不符合预期，缺少字段 {e}")
     except Exception as e:
         print(f"\n测试失败，错误信息: {e}")
         # 如果是 HTML 页面（比如 Cloudflare 拦截页），就截取前 200 个字符，防止刷屏
-        if 'response' in locals() and response.text:
+        if response is not None and hasattr(response, 'text') and response.text:
             err_text = response.text.strip()
             if err_text.startswith("<!DOCTYPE html>") or err_text.startswith("<html"):
                 print(f"接口返回了一个网页(大概率是被防火墙拦截了)，页面前段内容: {err_text[:200]}...")
@@ -132,10 +149,35 @@ def main():
                     
                     if not matches:
                         print(f"未找到包含关键字 '{choice}' 的模型，请重新输入。")
+                        continue
+                    elif len(matches) == 1:
+                        # 只找到一个匹配，直接使用
+                        selected_model = matches[0][1]
+                        print(f"\n已选择模型: {selected_model}")
                     else:
+                        # 找到多个匹配，列出来让用户选择
                         print(f"\n找到 {len(matches)} 个包含 '{choice}' 的模型：")
                         for orig_idx, m in matches:
                             print(f"  {orig_idx}. {m}")
+                        
+                        sub_choice = input("\n请从上面的列表中选择模型序号: ").strip()
+                        if sub_choice.isdigit():
+                            sub_idx = int(sub_choice)
+                            # 检查是否在匹配结果中
+                            for orig_idx, m in matches:
+                                if orig_idx == sub_idx:
+                                    selected_model = m
+                                    break
+                            if selected_model is None:
+                                print("错误：选择无效，请重新输入。")
+                                continue
+                        else:
+                            print("错误：请输入正确的序号。")
+                            continue
+                
+                # 确保selected_model被赋值
+                if selected_model is None:
+                    print("错误：模型选择失败，请重新输入。")
                     continue
             else:
                 # 列表为空时的手动模式
@@ -143,6 +185,7 @@ def main():
                 if not choice:
                     continue
                 selected_model = choice
+                print(f"\n已选择模型: {selected_model}")
 
             # 执行测试
             test_chat_completion(base_url, api_key, selected_model)
