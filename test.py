@@ -1,13 +1,15 @@
 import requests
 import sys
+import json
+
+DEFAULT_USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 
 def get_models(base_url, api_key):
     url = f"{base_url.rstrip('/')}/models"
     headers = {
         "Authorization": f"Bearer {api_key}",
         "Content-Type": "application/json",
-        # 伪装成正常浏览器，降低被 Cloudflare 等 WAF 拦截的概率
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        "User-Agent": DEFAULT_USER_AGENT
     }
     
     print("\n正在尝试获取模型列表...")
@@ -20,16 +22,22 @@ def get_models(base_url, api_key):
             models = [model["id"] for model in data["data"]]
             return models, "SUCCESS", ""
         else:
-            return [], "PARSE_ERROR", f"无法解析返回的 JSON: {data}"
+            return [], "PARSE_ERROR", f"无法解析返回的 JSON:\n{json.dumps(data, indent=2, ensure_ascii=False)}"
             
+    except ValueError:
+        return [], "PARSE_ERROR", f"接口未返回有效的 JSON 格式数据。可能是被防火墙拦截或接口地址错误。\n响应内容前200字符: {response.text[:200]}"
     except requests.exceptions.HTTPError as e:
         status = e.response.status_code
+        err_text = e.response.text.strip()
         if status in (401, 403):
-            return [], "AUTH_ERROR", f"HTTP {status} 拒绝访问。API Key 错误、余额不足，或 IP 被防火墙(如Cloudflare)拦截。"
+            msg = f"HTTP {status} 拒绝访问。API Key 错误、余额不足，或 IP 被防火墙拦截。"
+            if err_text.startswith("<!DOCTYPE html>") or err_text.startswith("<html"):
+                msg += f"\n防火墙拦截页面前段: {err_text[:200]}..."
+            return [], "AUTH_ERROR", msg
         elif status in (404, 405):
             return [], "UNSUPPORTED", f"HTTP {status}。该接口似乎没有实现标准的大模型列表路由。"
         else:
-            return [], "HTTP_ERROR", f"HTTP {status} 请求失败。"
+            return [], "HTTP_ERROR", f"HTTP {status} 请求失败。详细信息: {err_text[:200]}"
     except requests.exceptions.RequestException as e:
         return [], "NETWORK_ERROR", f"网络连接异常: {e}"
 
@@ -38,7 +46,7 @@ def test_chat_completion(base_url, api_key, model_name):
     headers = {
         "Authorization": f"Bearer {api_key}",
         "Content-Type": "application/json",
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+        "User-Agent": DEFAULT_USER_AGENT
     }
     payload = {
         "model": model_name,
@@ -55,39 +63,38 @@ def test_chat_completion(base_url, api_key, model_name):
         response.raise_for_status()
         result = response.json()
         
-        # 验证返回的JSON结构
         if "choices" not in result or not result["choices"]:
             print("\n测试失败: 返回的响应缺少 'choices' 字段。")
-            print(f"完整响应: {result}")
+            print(f"完整响应:\n{json.dumps(result, indent=2, ensure_ascii=False)}")
             return
         
         reply = result["choices"][0]["message"]["content"]
-        print("\n测试成功！模型回复如下：")
+        latency = response.elapsed.total_seconds()
+        
+        print(f"\n测试成功！(耗时: {latency:.2f}秒) 模型回复如下：")
         print("-" * 50)
         print(reply)
         print("-" * 50)
         
     except requests.exceptions.ReadTimeout:
-        print(f"\n测试失败: 响应超时 (Read timed out)。")
+        print("\n测试失败: 响应超时 (Read timed out)。")
     except requests.exceptions.ConnectionError as e:
         print(f"\n测试失败: 连接错误 - {e}")
-    except requests.exceptions.HTTPError as e:
-        print(f"\n测试失败: HTTP 错误 - {e}")
     except ValueError as e:
         print(f"\n测试失败: JSON 解析错误 - {e}")
         if response is not None:
             print(f"返回的内容: {response.text[:500]}")
+    except requests.exceptions.HTTPError as e:
+        print(f"\n测试失败: HTTP 错误 {e.response.status_code}")
+        err_text = e.response.text.strip()
+        if err_text.startswith("<!DOCTYPE html>") or err_text.startswith("<html"):
+            print(f"接口返回了一个网页(大概率是被防火墙拦截了)，页面前段内容: {err_text[:200]}...")
+        else:
+            print(f"接口返回的详细错误: {err_text[:500]}")
     except KeyError as e:
         print(f"\n测试失败: 返回的JSON结构不符合预期，缺少字段 {e}")
     except Exception as e:
-        print(f"\n测试失败，错误信息: {e}")
-        # 如果是 HTML 页面（比如 Cloudflare 拦截页），就截取前 200 个字符，防止刷屏
-        if response is not None and hasattr(response, 'text') and response.text:
-            err_text = response.text.strip()
-            if err_text.startswith("<!DOCTYPE html>") or err_text.startswith("<html"):
-                print(f"接口返回了一个网页(大概率是被防火墙拦截了)，页面前段内容: {err_text[:200]}...")
-            else:
-                print(f"接口返回的详细错误: {err_text}")
+        print(f"\n测试失败，未知错误信息: {e}")
 
 def main():
     print("=" * 50)
@@ -103,27 +110,30 @@ def main():
             print("错误：URL 和 API Key 不能为空，请重新输入。")
             continue
             
-        models, status, err_msg = get_models(base_url, api_key)
+        direct_model = input("\n是否直接指定模型？(直接输入模型名称，或直接按回车尝试拉取模型列表): ").strip()
         
-        # 核心逻辑修复点：根据状态码决定走向
-        if status == "SUCCESS":
-            print("\n成功获取到模型列表。")
-            for idx, model in enumerate(models, 1):
-                print(f"  {idx}. {model}")
-            print(f"\n当前共支持 {len(models)} 个模型。")
-            
-        elif status == "UNSUPPORTED":
-            print(f"提示：{err_msg}")
-            print("进入手动模式。由于无法拉取列表，你需要明确知道你想测试的模型名称。")
-            
+        if direct_model:
+            status = "MANUAL"
+            models = []
+            print(f"\n已直接指定模型: {direct_model}")
         else:
-            print(f"\n错误：获取模型列表失败 -> {err_msg}")
-            retry = input("是否重新输入 Base URL 和 API Key？(y/n): ").strip().lower()
-            if retry == 'y':
-                continue
+            models, status, err_msg = get_models(base_url, api_key)
+            
+            if status == "SUCCESS":
+                print("\n成功获取到模型列表。")
+                for idx, model in enumerate(models, 1):
+                    print(f"  {idx}. {model}")
+                print(f"\n当前共支持 {len(models)} 个模型。")
+            elif status == "UNSUPPORTED":
+                print(f"提示：{err_msg}")
+                print("进入手动模式。由于无法拉取列表，你需要明确知道你想测试的模型名称。")
             else:
-                print("脚本已退出。")
-                sys.exit(0)
+                print(f"\n错误：获取模型列表失败 -> {err_msg}")
+                retry = input("是否重新输入 Base URL 和 API Key？(y/n): ").strip().lower()
+                if retry == 'y':
+                    continue
+                else:
+                    return
         
         while True:
             if status == "SUCCESS":
@@ -145,49 +155,46 @@ def main():
                         continue
                 else:
                     keyword = choice.lower()
-                    matches = [(idx + 1, m) for idx, m in enumerate(models) if keyword in m.lower()]
+                    matches = [m for m in models if keyword in m.lower()]
                     
                     if not matches:
                         print(f"未找到包含关键字 '{choice}' 的模型，请重新输入。")
                         continue
                     elif len(matches) == 1:
-                        # 只找到一个匹配，直接使用
-                        selected_model = matches[0][1]
+                        selected_model = matches[0]
                         print(f"\n已选择模型: {selected_model}")
                     else:
-                        # 找到多个匹配，列出来让用户选择
                         print(f"\n找到 {len(matches)} 个包含 '{choice}' 的模型：")
-                        for orig_idx, m in matches:
-                            print(f"  {orig_idx}. {m}")
+                        for i, m in enumerate(matches, 1):
+                            print(f"  {i}. {m}")
                         
                         sub_choice = input("\n请从上面的列表中选择模型序号: ").strip()
                         if sub_choice.isdigit():
                             sub_idx = int(sub_choice)
-                            # 检查是否在匹配结果中
-                            for orig_idx, m in matches:
-                                if orig_idx == sub_idx:
-                                    selected_model = m
-                                    break
-                            if selected_model is None:
+                            if 1 <= sub_idx <= len(matches):
+                                selected_model = matches[sub_idx - 1]
+                                print(f"\n已选择模型: {selected_model}")
+                            else:
                                 print("错误：选择无效，请重新输入。")
                                 continue
                         else:
                             print("错误：请输入正确的序号。")
                             continue
                 
-                # 确保selected_model被赋值
                 if selected_model is None:
                     print("错误：模型选择失败，请重新输入。")
                     continue
             else:
-                # 列表为空时的手动模式
-                choice = input("\n请输入你想测试的完整模型名称 (例如 @cf/meta/llama-3-8b-instruct): ").strip()
-                if not choice:
-                    continue
-                selected_model = choice
-                print(f"\n已选择模型: {selected_model}")
+                if direct_model:
+                    selected_model = direct_model
+                    direct_model = "" 
+                else:
+                    choice = input("\n请输入你想测试的完整模型名称 (例如 @cf/meta/llama-3-8b-instruct): ").strip()
+                    if not choice:
+                        continue
+                    selected_model = choice
+                    print(f"\n已选择模型: {selected_model}")
 
-            # 执行测试
             test_chat_completion(base_url, api_key, selected_model)
             
             print("\n" + "=" * 50)
@@ -204,8 +211,7 @@ def main():
             elif next_step == '2':
                 break 
             elif next_step == '3':
-                print("\n脚本已退出。")
-                sys.exit(0)
+                return
             else:
                 print("无效输入，默认返回重新测试模型。")
                 continue
@@ -213,6 +219,7 @@ def main():
 if __name__ == "__main__":
     try:
         main()
+        print("\n脚本已自然退出。")
     except KeyboardInterrupt:
         print("\n\n检测到强制中断，脚本已退出。")
         sys.exit(0)
