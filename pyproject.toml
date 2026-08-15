@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "llm-api-lab"
+version = "0.1.0"
+description = "A macOS desktop lab for comparing OpenAI and Anthropic compatible LLM APIs."
+requires-python = ">=3.9"
+dependencies = [
+  "httpx>=0.27,<1.0",
+  "PySide6-Essentials>=6.6,<7.0",
+]
+
+[project.optional-dependencies]
+build = ["pyinstaller>=6.0,<7.0"]
+dev = ["pytest>=8.0,<9.0"]
+
+[project.scripts]
+llm-api-lab = "llm_tester.app:main"
+
+[tool.setuptools]
+packages = ["llm_tester"]

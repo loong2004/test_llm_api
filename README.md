@@ -1,49 +1,48 @@
-# LLM API 可用性测试工具
+# 构建 macOS 应用
 
-一个功能强大的命令行工具，用于快速测试和验证各种大语言模型(LLM) API的可用性和连通性。
+本项目可在 macOS 上构建为可直接双击启动的 `LLM API Lab.app`。
 
-## 功能特性
+## 环境要求
 
-✨ **核心功能：**
-- 🔍 自动获取API提供商支持的模型列表
-- 🧪 发送测试消息验证API连接
-- 🛡️ 完善的异常处理和错误诊断
-- 🔄 支持多提供商切换测试
-- 🎯 灵活的模型选择方式（序号、全名、关键字搜索）
+- macOS
+- Python 3.9 或更高版本
+- Xcode Command Line Tools
 
-🚀 **用户体验优化：**
-- 智能关键字搜索（单个匹配自动选中，多个匹配出菜单）
-- 详细的错误信息和诊断建议
-- 防火墙拦截检测（识别Cloudflare等WAF）
-- 浏览器User-Agent伪装，降低被拦截概率
-- 多轮次测试支持，无需重复配置
-
-## 系统要求
-
-- **Python**: 3.6+
-- **依赖包**: `requests`
-
-## 安装
-
-### 1. 克隆或下载项目
-```bash
-cd your_project_directory
-git clone https://github.com/loong2004/test_llm_api.git
-```
-
-### 2. 安装依赖
-```bash
-python -m pip install requests
-```
-
-## 快速开始
-
-### 基本用法
+如未安装 Xcode Command Line Tools，先执行：
 
 ```bash
-python test.py
+xcode-select --install
 ```
 
-程序会提示你输入：
-1. **API Base URL** - 例如：`https://api.openai.com/v1`
-2. **API Key** - 例如：`sk-xxxxxxxxxxxxxx`
+确认 Python 可用：
+
+```bash
+python3 --version
+```
+
+## 构建
+
+在项目根目录执行：
+
+```bash
+chmod +x scripts/build_macos.sh
+./scripts/build_macos.sh
+```
+
+脚本会自动安装构建依赖，并使用 PyInstaller 生成 macOS 应用。
+
+## 产物
+
+构建完成后的应用位于：
+
+```text
+dist/LLM API Lab.app
+```
+
+在 Finder 中双击该文件即可启动。
+
+也可以通过终端打开：
+
+```bash
+open "dist/LLM API Lab.app"
+```

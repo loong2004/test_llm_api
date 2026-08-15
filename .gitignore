@@ -1,0 +1,16 @@
+# macOS metadata
+.DS_Store
+
+# Python build and test caches
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+*.spec
+
+# Generated local application bundle
+dist/
+data/
+
+# Local task records
+.refactor-record/
