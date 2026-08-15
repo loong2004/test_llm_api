@@ -54,16 +54,19 @@ class MainWindow(QMainWindow):
         root = QSplitter(Qt.Orientation.Horizontal)
         root.addWidget(self._build_provider_panel())
         root.addWidget(self._build_console_panel())
-        root.setSizes([360, 920])
-        root.setHandleWidth(1)
+        root.setSizes([382, 898])
+        root.setStretchFactor(0, 0)
+        root.setStretchFactor(1, 1)
+        root.setCollapsible(0, False)
+        root.setHandleWidth(6)
         self.setCentralWidget(root)
 
     def _build_provider_panel(self) -> QWidget:
         panel = QWidget()
         panel.setObjectName("providerPanel")
         layout = QVBoxLayout(panel)
-        layout.setContentsMargins(16, 16, 16, 16)
-        layout.setSpacing(12)
+        layout.setContentsMargins(22, 22, 20, 20)
+        layout.setSpacing(14)
 
         heading = QLabel("服务商")
         heading.setObjectName("panelHeading")
@@ -71,9 +74,12 @@ class MainWindow(QMainWindow):
 
         selector_layout = QHBoxLayout()
         self.provider_select = QComboBox()
+        self.provider_select.setObjectName("providerSelect")
         self.provider_select.currentIndexChanged.connect(self._select_provider)
         self.new_button = QToolButton()
         self.new_button.setText("+")
+        self.new_button.setObjectName("newProviderButton")
+        self.new_button.setFixedSize(36, 36)
         self.new_button.setToolTip("新建服务商")
         self.new_button.clicked.connect(self._new_provider)
         selector_layout.addWidget(self.provider_select, 1)
@@ -84,6 +90,8 @@ class MainWindow(QMainWindow):
         form_group.setObjectName("connectionGroup")
         form = QFormLayout(form_group)
         form.setLabelAlignment(Qt.AlignmentFlag.AlignLeft)
+        form.setHorizontalSpacing(12)
+        form.setVerticalSpacing(11)
         self.provider_name = QLineEdit()
         self.protocol = QComboBox()
         self.protocol.addItem("OpenAI 兼容", Protocol.OPENAI.value)
@@ -96,6 +104,8 @@ class MainWindow(QMainWindow):
         self.api_key.setPlaceholderText("保存至 data/providers.json")
         reveal_key = QToolButton()
         reveal_key.setText("显示")
+        reveal_key.setObjectName("revealButton")
+        reveal_key.setFixedWidth(58)
         reveal_key.setToolTip("显示或隐藏 API 密钥")
         reveal_key.setCheckable(True)
         reveal_key.toggled.connect(
@@ -118,19 +128,30 @@ class MainWindow(QMainWindow):
         model_group = QGroupBox("模型")
         model_group.setObjectName("modelGroup")
         model_layout = QVBoxLayout(model_group)
+        model_layout.setSpacing(10)
+        self.model_search = QLineEdit()
+        self.model_search.setObjectName("modelSearch")
+        self.model_search.setPlaceholderText("输入关键词筛选模型")
+        self.model_search.setClearButtonEnabled(True)
+        self.model_search.textChanged.connect(self._filter_model_list)
+        model_layout.addWidget(self.model_search)
         self.model_select = QComboBox()
         self.model_select.setEditable(True)
         self.model_select.setInsertPolicy(QComboBox.InsertPolicy.NoInsert)
         self.model_select.setToolTip("选择已拉取的模型，或手动输入模型名称")
         self.model_select.currentTextChanged.connect(lambda _: self._update_model_context())
         self.model_menu_button = QToolButton()
+        self.model_menu_button.setObjectName("modelMenuButton")
+        self.model_menu_button.setFixedSize(36, 36)
         self.model_menu_button.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_ArrowDown))
         self.model_menu_button.setToolTip("展开已拉取的模型")
         self.model_menu_button.clicked.connect(self.model_select.showPopup)
         self.fetch_button = QPushButton("拉取模型")
+        self.fetch_button.setObjectName("secondaryButton")
+        self.fetch_button.setFixedHeight(36)
         self.fetch_button.clicked.connect(self._fetch_models)
         self.model_count = QLabel("尚未加载模型")
-        self.model_count.setObjectName("mutedText")
+        self.model_count.setObjectName("modelCount")
         model_row = QHBoxLayout()
         model_row.setContentsMargins(0, 0, 0, 0)
         model_row.addWidget(self.model_select, 1)
@@ -141,10 +162,14 @@ class MainWindow(QMainWindow):
         layout.addWidget(model_group)
 
         actions = QHBoxLayout()
+        actions.setSpacing(10)
         self.save_button = QPushButton("保存服务商")
+        self.save_button.setObjectName("primaryButton")
+        self.save_button.setFixedHeight(38)
         self.save_button.clicked.connect(self._save_provider)
         self.delete_button = QPushButton("删除")
         self.delete_button.setObjectName("dangerButton")
+        self.delete_button.setFixedHeight(38)
         self.delete_button.clicked.connect(self._delete_provider)
         actions.addWidget(self.save_button)
         actions.addWidget(self.delete_button)
@@ -152,7 +177,7 @@ class MainWindow(QMainWindow):
         layout.addStretch(1)
 
         security = QLabel("服务商配置和 API 密钥保存在 data/providers.json。")
-        security.setObjectName("mutedText")
+        security.setObjectName("securityNote")
         security.setWordWrap(True)
         layout.addWidget(security)
         return panel
@@ -161,14 +186,17 @@ class MainWindow(QMainWindow):
         panel = QWidget()
         panel.setObjectName("consolePanel")
         layout = QVBoxLayout(panel)
-        layout.setContentsMargins(30, 24, 30, 24)
-        layout.setSpacing(14)
+        layout.setContentsMargins(34, 28, 34, 26)
+        layout.setSpacing(18)
 
         top = QHBoxLayout()
         heading = QLabel("对话")
         heading.setObjectName("panelHeading")
         top.addWidget(heading)
         top.addStretch(1)
+        self.status = QLabel("就绪", panel)
+        self.status.setObjectName("statusPill")
+        top.addWidget(self.status)
         layout.addLayout(top)
 
         self.chat_scroll = QScrollArea()
@@ -178,24 +206,25 @@ class MainWindow(QMainWindow):
         self.chat_viewport = QWidget()
         self.chat_viewport.setObjectName("chatViewport")
         self.messages_layout = QVBoxLayout(self.chat_viewport)
-        self.messages_layout.setContentsMargins(30, 18, 30, 24)
-        self.messages_layout.setSpacing(18)
+        self.messages_layout.setContentsMargins(26, 18, 26, 28)
+        self.messages_layout.setSpacing(22)
         self.messages_layout.addStretch(1)
         self.chat_scroll.setWidget(self.chat_viewport)
         layout.addWidget(self.chat_scroll, 1)
 
         composer = QFrame()
         composer.setObjectName("composerFrame")
+        composer.setMinimumHeight(148)
         composer_layout = QVBoxLayout(composer)
-        composer_layout.setContentsMargins(16, 13, 14, 13)
-        composer_layout.setSpacing(8)
+        composer_layout.setContentsMargins(18, 16, 16, 14)
+        composer_layout.setSpacing(9)
         self.user_message = QPlainTextEdit()
         self.user_message.setObjectName("composerInput")
         self.user_message.setPlaceholderText("输入消息")
-        self.user_message.setFixedHeight(84)
+        self.user_message.setMinimumHeight(92)
         composer_layout.addWidget(self.user_message)
         composer_actions = QHBoxLayout()
-        composer_actions.setContentsMargins(2, 0, 0, 0)
+        composer_actions.setContentsMargins(3, 0, 0, 0)
         self.model_context = QLabel("请选择服务商和模型")
         self.model_context.setObjectName("composerContext")
         self.clear_button = QToolButton()
@@ -215,8 +244,6 @@ class MainWindow(QMainWindow):
         composer_layout.addLayout(composer_actions)
         layout.addWidget(composer)
 
-        self.status = QLabel("就绪", panel)
-        self.status.hide()
         return panel
 
     def _load_providers(self) -> None:
@@ -281,14 +308,37 @@ class MainWindow(QMainWindow):
             )
 
     def _refresh_model_select(self) -> None:
+        self.model_search.blockSignals(True)
+        self.model_search.clear()
+        self.model_search.blockSignals(False)
+        self._filter_model_list()
+        self._update_model_context()
+
+    def _filter_model_list(self, query: str = "") -> None:
+        """Filter the visible list by one or more keywords without changing stored models."""
+        keywords = query.casefold().split()
+        previous = self.model_select.currentText().strip()
+        filtered = [
+            model for model in self.current_models
+            if all(keyword in model.casefold() for keyword in keywords)
+        ]
+
+        self.model_select.blockSignals(True)
         self.model_select.clear()
-        self.model_select.addItems(self.current_models)
-        if self.current_models:
-            self.model_select.setCurrentIndex(0)
-            self.model_count.setText("已加载 {0} 个模型".format(len(self.current_models)))
+        self.model_select.addItems(filtered)
+        if filtered:
+            selected_index = filtered.index(previous) if previous in filtered else 0
+            self.model_select.setCurrentIndex(selected_index)
         else:
             self.model_select.setEditText("")
+        self.model_select.blockSignals(False)
+
+        if not self.current_models:
             self.model_count.setText("尚未加载模型，可手动输入模型名称")
+        elif keywords:
+            self.model_count.setText("显示 {0} / {1} 个模型".format(len(filtered), len(self.current_models)))
+        else:
+            self.model_count.setText("已加载 {0} 个模型".format(len(self.current_models)))
         self._update_model_context()
 
     def _draft_provider(self) -> Provider:
@@ -577,22 +627,22 @@ def _theme_palette(dark: bool) -> QPalette:
 def _theme_style(dark: bool) -> str:
     colors = (
         {
-            "window": "#161819", "sidebar": "#1c1f20", "surface": "#202326", "input": "#141617",
-            "text": "#f1f4f2", "muted": "#aab3ad", "border": "#383e3a", "border_focus": "#56ca8e",
-            "accent": "#35b978", "accent_hover": "#49ca8a", "accent_text": "#07150d", "danger": "#ff9a90",
-            "hover": "#292d2f", "pressed": "#121415", "selection": "#214f39", "scroll": "#4b534e",
+            "window": "#111315", "sidebar": "#191d1f", "surface": "#202528", "input": "#15191b",
+            "text": "#f4f7f5", "muted": "#9aa7a0", "border": "#303a36", "border_focus": "#54d39a",
+            "accent": "#48d597", "accent_hover": "#63e0a8", "accent_text": "#07150d", "danger": "#ff9c91",
+            "hover": "#293330", "pressed": "#0d1112", "selection": "#204f3b", "scroll": "#42534b",
         }
         if dark
         else {
-            "window": "#f5f7f5", "sidebar": "#edf1ee", "surface": "#ffffff", "input": "#ffffff",
-            "text": "#17211b", "muted": "#66736a", "border": "#d5dcd7", "border_focus": "#1b8d58",
-            "accent": "#1b8d58", "accent_hover": "#167648", "accent_text": "#ffffff", "danger": "#b42318",
-            "hover": "#f0f5f1", "pressed": "#e5ece7", "selection": "#cbeed9", "scroll": "#aab4ad",
+            "window": "#f4f7f5", "sidebar": "#e9efeb", "surface": "#ffffff", "input": "#fbfdfc",
+            "text": "#16211b", "muted": "#68766e", "border": "#d0dad4", "border_focus": "#188b58",
+            "accent": "#188b58", "accent_hover": "#147447", "accent_text": "#ffffff", "danger": "#b42318",
+            "hover": "#eef5f0", "pressed": "#e2ebe5", "selection": "#c8ecd7", "scroll": "#aabbb0",
         }
     )
     return """
         QWidget {{
-            font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", sans-serif;
+            font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif;
             font-size: 13px;
             color: {text};
             background: {window};
@@ -600,59 +650,64 @@ def _theme_style(dark: bool) -> str:
         QMainWindow, QWidget#consolePanel {{ background: {window}; }}
         QWidget#providerPanel {{ background: {sidebar}; border-right: 1px solid {border}; }}
         QLabel {{ background: transparent; color: {text}; }}
-        QLabel#panelHeading {{ font-size: 20px; font-weight: 600; color: {text}; padding-bottom: 2px; }}
-        QLabel#mutedText {{ color: {muted}; font-size: 12px; line-height: 1.35; }}
-        QLabel#statusText {{ color: {accent}; font-weight: 600; padding: 5px 9px; background: {surface}; border: 1px solid {border}; border-radius: 5px; }}
-        QLabel#metricBadge {{ color: {muted}; font-size: 12px; padding: 5px 8px; background: {surface}; border: 1px solid {border}; border-radius: 4px; }}
+        QLabel#panelHeading {{ font-size: 23px; font-weight: 700; color: {text}; padding-bottom: 2px; }}
+        QLabel#mutedText {{ color: {muted}; font-size: 12px; }}
+        QLabel#securityNote {{ color: {muted}; font-size: 11px; line-height: 1.35; padding-top: 8px; }}
+        QLabel#modelCount {{ color: {muted}; font-size: 11px; padding: 1px 2px; }}
+        QLabel#statusPill {{ color: {accent}; font-size: 11px; font-weight: 600; padding: 5px 10px; background: {surface}; border: 1px solid {border}; border-radius: 11px; }}
         QGroupBox {{
-            background: {surface}; border: 1px solid {border}; border-radius: 6px;
-            margin-top: 13px; padding: 14px 10px 10px 10px; font-weight: 600;
+            background: {surface}; border: 1px solid {border}; border-radius: 10px;
+            margin-top: 13px; padding: 17px 12px 13px 12px; font-weight: 600;
         }}
-        QGroupBox::title {{ subcontrol-origin: margin; left: 9px; padding: 0 4px; color: {muted}; background: {surface}; }}
-        QGroupBox#parameterGroup {{ margin-top: 11px; padding: 13px 10px 10px 10px; }}
+        QGroupBox::title {{ subcontrol-origin: margin; left: 12px; padding: 0 5px; color: {muted}; background: {surface}; }}
         QLineEdit, QPlainTextEdit, QComboBox, QSpinBox, QDoubleSpinBox {{
-            color: {text}; background: {input}; border: 1px solid {border}; border-radius: 5px; padding: 6px;
+            color: {text}; background: {input}; border: 1px solid {border}; border-radius: 7px; padding: 7px 9px;
             selection-background-color: {selection}; selection-color: {text};
         }}
         QLineEdit::placeholder, QPlainTextEdit::placeholder {{ color: {muted}; }}
-        QLineEdit:focus, QPlainTextEdit:focus, QComboBox:focus, QSpinBox:focus, QDoubleSpinBox:focus {{ border: 1px solid {border_focus}; }}
+        QLineEdit:hover, QPlainTextEdit:hover, QComboBox:hover {{ border-color: {border_focus}; }}
+        QLineEdit:focus, QPlainTextEdit:focus, QComboBox:focus, QSpinBox:focus, QDoubleSpinBox:focus {{ border: 1px solid {border_focus}; background: {surface}; }}
+        QLineEdit#modelSearch {{ background: {surface}; border-color: transparent; padding-left: 9px; }}
+        QLineEdit#modelSearch:hover, QLineEdit#modelSearch:focus {{ border-color: {border}; }}
         QScrollArea#chatScroll {{ border: 0; background: transparent; }}
         QWidget#chatViewport {{ background: transparent; }}
-        QFrame#userBubble {{ background: {surface}; border: 1px solid {border}; border-radius: 22px; }}
-        QLabel#userMessageText {{ color: {text}; font-size: 15px; line-height: 1.48; background: transparent; }}
+        QFrame#userBubble {{ background: {selection}; border: 1px solid {accent}; border-radius: 16px; }}
+        QLabel#userMessageText {{ color: {text}; font-size: 15px; line-height: 1.5; background: transparent; }}
         QFrame#assistantMessage {{ background: transparent; border: 0; }}
         QLabel#assistantMessageText {{ color: {text}; font-size: 16px; line-height: 1.62; background: transparent; padding: 4px 3px; }}
-        QFrame#composerFrame {{ background: {surface}; border: 1px solid {border}; border-radius: 22px; }}
+        QFrame#composerFrame {{ background: {surface}; border: 1px solid {border}; border-radius: 16px; }}
+        QFrame#composerFrame:hover {{ border-color: {border_focus}; }}
         QPlainTextEdit#composerInput {{ background: transparent; border: 0; padding: 3px 4px; font-size: 15px; line-height: 1.4; }}
         QPlainTextEdit#composerInput:focus {{ border: 0; }}
         QLabel#composerContext {{ color: {muted}; font-size: 12px; padding: 4px 5px; }}
         QComboBox::drop-down {{ width: 26px; border: 0; }}
         QComboBox QAbstractItemView {{ color: {text}; background: {surface}; border: 1px solid {border}; selection-background-color: {selection}; }}
-        QCheckBox {{ background: transparent; spacing: 6px; }}
-        QCheckBox::indicator {{ width: 16px; height: 16px; border: 1px solid {border}; border-radius: 3px; background: {input}; }}
-        QCheckBox::indicator:checked {{ border-color: {accent}; background: {accent}; }}
         QPushButton, QToolButton {{
-            color: {text}; background: {surface}; border: 1px solid {border}; border-radius: 5px; min-height: 20px; padding: 6px 11px;
+            color: {text}; background: {surface}; border: 1px solid {border}; border-radius: 7px; min-height: 20px; padding: 7px 12px;
         }}
         QPushButton:hover, QToolButton:hover {{ background: {hover}; border-color: {border_focus}; }}
         QPushButton:pressed, QToolButton:pressed {{ background: {pressed}; }}
         QPushButton:disabled, QToolButton:disabled {{ color: {muted}; background: {window}; border-color: {border}; }}
-        QPushButton#primaryButton {{ color: {accent_text}; background: {accent}; border-color: {accent}; font-weight: 600; min-width: 92px; }}
+        QPushButton#primaryButton {{ color: {accent_text}; background: {accent}; border-color: {accent}; font-weight: 700; min-width: 130px; }}
         QPushButton#primaryButton:hover {{ background: {accent_hover}; border-color: {accent_hover}; }}
-        QPushButton#dangerButton {{ color: {danger}; }}
+        QPushButton#secondaryButton {{ background: transparent; border-color: {border}; font-weight: 600; }}
+        QPushButton#secondaryButton:hover {{ background: {hover}; border-color: {border_focus}; }}
+        QPushButton#dangerButton {{ color: {danger}; background: transparent; }}
         QToolButton {{ min-width: 20px; padding: 5px 8px; }}
+        QToolButton#newProviderButton, QToolButton#modelMenuButton {{ color: {accent}; background: {surface}; font-size: 17px; font-weight: 600; padding: 0; }}
+        QToolButton#revealButton {{ font-size: 12px; padding: 0 7px; }}
         QToolButton#sendButton {{
-            min-width: 34px; max-width: 34px; min-height: 34px; max-height: 34px;
-            padding: 0; border-radius: 17px; color: {accent_text}; background: {accent}; border-color: {accent};
+            min-width: 40px; max-width: 40px; min-height: 40px; max-height: 40px;
+            padding: 0; border-radius: 20px; color: {accent_text}; background: {accent}; border-color: {accent};
         }}
         QToolButton#sendButton:hover {{ background: {accent_hover}; border-color: {accent_hover}; }}
         QToolButton#sendButton:disabled {{ background: {border}; border-color: {border}; color: {muted}; }}
         QToolButton#clearButton {{
-            min-width: 30px; max-width: 30px; min-height: 30px; max-height: 30px;
+            min-width: 32px; max-width: 32px; min-height: 32px; max-height: 32px;
             padding: 0; border: 0; background: transparent; color: {muted};
         }}
         QToolButton#clearButton:hover {{ background: {hover}; color: {text}; }}
-        QScrollBar:vertical {{ width: 10px; background: transparent; margin: 2px; }}
+        QScrollBar:vertical {{ width: 9px; background: transparent; margin: 3px; }}
         QScrollBar::handle:vertical {{ min-height: 28px; border-radius: 4px; background: {scroll}; }}
         QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{ height: 0; }}
         QSplitter::handle {{ background: {border}; }}
